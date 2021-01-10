@@ -1,0 +1,24 @@
+version: "3.9"
+
+services:
+
+  jupyter:
+    build:
+      context: ${PWD}
+      dockerfile: Dockerfile
+    environment:
+      - TZ=Asia/Tokyo
+      - JUPYTER_ENABLE_LAB=yes
+    ports:
+      - 8888:8888
+    volumes:
+      - datastore:/home/jovyan/work
+
+volumes:
+  datastore:
+    driver: local
+    # cf. https://bit.ly/3ox0duJ --> but this solution needs `driver: local` or somthing driver.
+    driver_opts:
+      type: none
+      device: ${USER_MOUNT_PATH}
+      o: bind
