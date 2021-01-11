@@ -1,0 +1,23 @@
+
+[providers.docker]
+endpoint = "unix:///var/run/docker.sock"
+exposedByDefault = false
+
+[serversTransport]
+insecureSkipVerify = true
+
+[entryPoints]
+[entryPoints.http]
+address = ":80"
+
+[api]
+dashboard = true
+insecure = true
+debug = true
+
+[log]
+level = "DEBUG"
+filePath = "/var/log/traefik/DEBUG.log"
+
+[accessLog]
+filePath = "/var/log/traefik/access.log"
