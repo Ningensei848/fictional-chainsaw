@@ -1,20 +1,19 @@
 version: "3.9"
 
-services:
-
-  jupyter:
-    build:
-      context: ${PWD}
-      dockerfile: Dockerfile
-    environment:
-      - TZ=Asia/Tokyo
-      - JUPYTER_ENABLE_LAB=yes
-    ports:
-      - 8888:8888
-    volumes:
-      - datastore:/home/jovyan/work
+networks:
+  traefik_proxy:
+    external:
+      name: traefik_proxy
+  default:
+    driver: bridge
 
 volumes:
+  logfiles:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PATH_TO_LOG}
+      o: bind
   datastore:
     driver: local
     # cf. https://bit.ly/3ox0duJ --> but this solution needs `driver: local` or somthing driver.
@@ -22,3 +21,54 @@ volumes:
       type: none
       device: ${USER_MOUNT_PATH}
       o: bind
+
+
+services:
+  traefik:
+    container_name: traefik
+    build:
+      context: ${PWD}/traefik
+      dockerfile: Dockerfile.traefik
+    ports:
+      - ${PORT_TRAEFIK}:80
+    networks:
+      - traefik_proxy
+    volumes:
+      # So that Traefik can listen to the Docker events cf. https://doc.traefik.io/traefik/providers/docker/#endpoint
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Sync config file from Host to container
+      - ${PWD}/traefik/traefik.toml:/etc/traefik/traefik.toml
+      # Logs you specified on `traefik.toml`
+      - logfiles:/var/log/traefik
+    labels:
+      - "traefik.enable=true" # due to `exposedByDefault=false`
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${HOSTNAME}`)"
+      - "traefik.http.routers.traefik.service=api@internal"  # `api@internal` does not need to sepecify its port
+      - "traefik.tcp.routers.traefik.rule=HostSNI(`traefik.${HOSTNAME}`)"
+      - "traefik.tcp.routers.traefik.service=traefikAPI"
+      # Tell Traefik to use 80 to connect to this container
+      - "traefik.tcp.services.traefikAPI.loadbalancer.server.port=80" # this port is exposed by container
+
+  jupyter:
+    container_name: jupyter
+    build:
+      context: ${PWD}/jupyterlab
+      dockerfile: Dockerfile.jupyterlab
+    networks:
+      - traefik_proxy
+    environment:
+      - TZ=Asia/Tokyo
+      - JUPYTER_ENABLE_LAB=yes
+      - RESTARTABLE=yes
+      # - NB_USER=${USERNAME:-jovyan}
+      - JUPYTER_PORT=${PORT_JUPYTER}
+      - JUPYTER_PASSWORD=${PASSWORD_JUPYTER}
+    volumes:
+      - ${PWD}/jupyterlab/config:/home/${USERNAME:-jovyan}/.jupyter
+      - datastore:/home/${USERNAME:-jovyan}  # defualt user in `minimal-notebook`
+    labels:
+      - "traefik.enable=true" # due to `exposedByDefault=false`
+      - "traefik.http.routers.jupyter.rule=Host(`jupyter.${HOSTNAME}`)"
+      - "traefik.http.routers.jupyter.service=serveJupyter"
+      # Tell Traefik to use ${PORT_JUPYTER} to connect to `jupyter` container
+      - "traefik.http.services.serveJupyter.loadbalancer.server.port=${PORT_JUPYTER}"
